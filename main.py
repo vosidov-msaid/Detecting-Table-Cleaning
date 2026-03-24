@@ -1,9 +1,12 @@
 import argparse
+import os
 import cv2
 import numpy as np
 import pandas as pd
 
 from ultralytics import YOLO
+
+from utils import download_video
 
 
 if __name__ == "__main__":
@@ -17,4 +20,7 @@ if __name__ == "__main__":
     if args.video is None:
         print("Error: Video file is required")
         exit(1)
-        
+    
+    if not os.path.exists(args.video):
+        download_video("https://drive.google.com/uc?id=1rYmJB13vvV96JuDUrBvlEXtoKFPWo75A", args.video)
+    
