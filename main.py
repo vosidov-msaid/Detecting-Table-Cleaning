@@ -14,6 +14,8 @@ STATE_EMPTY    = "EMPTY"
 STATE_OCCUPIED = "OCCUPIED"
 STATE_APPROACH = "APPROACH"
 
+model = YOLO(config.model)
+
 def get_video_info(cap: cv2.VideoCapture):
     """Get video information"""
 
@@ -24,6 +26,7 @@ def get_video_info(cap: cv2.VideoCapture):
     return fps, width, height, total_frames
 
 def resize_video(frame):
+    """Resize video to standart shape"""
     max_w, max_h = 1280, 720
     h, w = frame.shape[:2]
     scale = min(max_w / w, max_h / h, 1.0)
@@ -33,7 +36,8 @@ def resize_video(frame):
     
     return h, w, scale, frame
 
-def get_rio_frame(cap: cv2.VideoCapture):
+def get_roi_frame(cap: cv2.VideoCapture):
+    """Get ROI coordinates"""
     ret, frame = cap.read()
     if not ret:
         raise RuntimeError("Failed to read frame")
@@ -56,7 +60,7 @@ def draw_frame(frame, roi, state, person_boxes):
         STATE_APPROACH: "APPROACH",
     }.get(state, (255, 255, 255))
 
-    # RIO Frame
+    # ROI Frame
     cv2.rectangle(frame, (x, y), (x + w, y + h), color, 3)
 
     # Person boxes
@@ -65,8 +69,19 @@ def draw_frame(frame, roi, state, person_boxes):
 
     return frame
 
+def bbox_iou_with_roi(bx1, by1, bx2, by2, rx, ry, rw, rh) -> float:
+    ix1 = max(bx1, rw)
+    iy1 = max(by1, ry)
+    ix2 = min(bx2, rx + rw)
+    iy2 = min(by2, ry + rh)
+    if ix2 <= ix1 or iy2 <= iy1:
+        return 0.0
+    inter = (ix2 - ix1) * (iy2 - iy1)
+    roi_area = rw * rh
+    return inter / roi_area
+
 def detect_person(frame: np.ndarray) -> list[tuple[int, int, int, int]]:
-    model = YOLO(config.model)
+    """Detect person on frames and return coordinates"""
     results = model(frame, 
                         conf=config.threshold,
                         classes=[0],
@@ -79,6 +94,8 @@ def detect_person(frame: np.ndarray) -> list[tuple[int, int, int, int]]:
     return boxes
 
 def run(video_path: str, output_path: Path):
+    output_path.mkdir(parents=True, exist_ok=True)
+
     cap = cv2.VideoCapture(video_path)
 
     if not cap.isOpened():
@@ -88,9 +105,16 @@ def run(video_path: str, output_path: Path):
     fps, width, height, total_frames = get_video_info(cap)
     print(f"[INFO] Video: {width}x{height}, FPS={fps}, Total frames={total_frames}")
 
-    # RIO Frame
-    roi = get_rio_frame(cap)
-    print("[INFO] RIO: ", roi)
+    # ROI Frame
+    roi = get_roi_frame(cap)
+    print("[INFO] ROI: ", roi)
+
+    out_path = str(output_path / "output.mp4")
+    fourcc = cv2.VideoWriter_fourcc(*"mp4v")
+    writer = cv2.VideoWriter(out_path, fourcc, fps, (1280, 720))
+
+    frame_no = 0
+    last_boxes = []
 
     # Video handling... (click Q for quit)
     while True:
@@ -98,17 +122,34 @@ def run(video_path: str, output_path: Path):
         if not ret:
             break
 
+        frame_no += 1
+
+        # Resize video
         h, w, scale, frame = resize_video(frame)
 
-        last_boxes = detect_person(frame)
+        if frame_no % config.skip_frames == 0:  
+            # Detect person on frame        
+            last_boxes = detect_person(frame)
+
+        # Check person in ROI
+        rx, ry, rw, rh = roi
+        person_in_roi = any(
+            bbox_iou_with_roi(bx1, by1, bx2, by2, rx, ry, rw, rh) >= config.iou_threshold
+            for (bx1, by1, bx2, by2) in last_boxes
+        )
 
         # Draw frame
-        vis = draw_frame(frame, roi, "STATE_OCCUPIED", last_boxes)
+        vis = draw_frame(frame.copy(), roi, "STATE_OCCUPIED", last_boxes)
+
+        writer.write(vis)
+
         cv2.imshow("Table Detection", vis)
         if cv2.waitKey(1) & 0xFF == ord("q"):
-            print("[INFO] Прерывание пользователем.")
+            print("[INFO] Exit")
             break
     cap.release()
+    writer.release()
+
     cv2.destroyAllWindows()
         
 
