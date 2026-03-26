@@ -10,11 +10,11 @@ from ultralytics import YOLO
 import config
 from utils import download_video
 
-STATE_EMPTY    = "EMPTY"
-STATE_OCCUPIED = "OCCUPIED"
-STATE_APPROACH = "APPROACH"
+STATE_EMPTY = config.STATE_EMPTY
+STATE_OCCUPIED = config.STATE_OCCUPIED
+STATE_APPROACH = config.STATE_APPROACH
 
-model = YOLO(config.model)
+model = YOLO(config.MODEL)
 
 def get_video_info(cap: cv2.VideoCapture):
     """Get video information"""
@@ -26,30 +26,29 @@ def get_video_info(cap: cv2.VideoCapture):
     return fps, width, height, total_frames
 
 def resize_video(frame):
-    """Resize video to standart shape"""
+    """Resize frames to 1280x720"""
     max_w, max_h = 1280, 720
     h, w = frame.shape[:2]
     scale = min(max_w / w, max_h / h, 1.0)
 
     if scale < 1.0:
         frame = cv2.resize(frame, (int(w * scale), int(h * scale)))
-    
     return h, w, scale, frame
 
 def get_roi_frame(cap: cv2.VideoCapture):
     """Get ROI coordinates"""
+    cap.set(cv2.CAP_PROP_POS_FRAMES, 0)
     ret, frame = cap.read()
     if not ret:
-        raise RuntimeError("Failed to read frame")
+        raise RuntimeError("Failed to read frame at frame 0")
 
-    cap.set(cv2.CAP_PROP_POS_FRAMES, 0)
     print("[INFO] Selected the table area: ")
 
-    h, w, scale, frame = resize_video(frame)
-
+    _, _, _, frame = resize_video(frame)
     roi_xywh = cv2.selectROI("Select the table area", frame, showCrosshair=True, fromCenter=False)
+    roi = tuple(int(v) for v in roi_xywh)
     cv2.destroyAllWindows()
-    return roi_xywh
+    return roi
 
 def draw_frame(frame, roi, state, person_boxes):
     x, y, w, h = roi
@@ -70,7 +69,7 @@ def draw_frame(frame, roi, state, person_boxes):
     return frame
 
 def bbox_iou_with_roi(bx1, by1, bx2, by2, rx, ry, rw, rh) -> float:
-    ix1 = max(bx1, rw)
+    ix1 = max(bx1, rx)
     iy1 = max(by1, ry)
     ix2 = min(bx2, rx + rw)
     iy2 = min(by2, ry + rh)
@@ -83,7 +82,7 @@ def bbox_iou_with_roi(bx1, by1, bx2, by2, rx, ry, rw, rh) -> float:
 def detect_person(frame: np.ndarray) -> list[tuple[int, int, int, int]]:
     """Detect person on frames and return coordinates"""
     results = model(frame, 
-                        conf=config.threshold,
+                        conf=config.THRESHOLD,
                         classes=[0],
                         verbose=False)
     boxes = []
@@ -125,19 +124,18 @@ def run(video_path: str, output_path: Path):
         frame_no += 1
 
         # Resize video
-        h, w, scale, frame = resize_video(frame)
+        _, _, _, frame = resize_video(frame)
 
-        if frame_no % config.skip_frames == 0:  
+        if frame_no % config.SKIP_FRAMES == 0:  
             # Detect person on frame        
             last_boxes = detect_person(frame)
 
         # Check person in ROI
         rx, ry, rw, rh = roi
         person_in_roi = any(
-            bbox_iou_with_roi(bx1, by1, bx2, by2, rx, ry, rw, rh) >= config.iou_threshold
+            bbox_iou_with_roi(bx1, by1, bx2, by2, rx, ry, rw, rh) >= config.IOU_THRESHOLD
             for (bx1, by1, bx2, by2) in last_boxes
         )
-
         # Draw frame
         vis = draw_frame(frame.copy(), roi, "STATE_OCCUPIED", last_boxes)
 
@@ -147,6 +145,7 @@ def run(video_path: str, output_path: Path):
         if cv2.waitKey(1) & 0xFF == ord("q"):
             print("[INFO] Exit")
             break
+    
     cap.release()
     writer.release()
 

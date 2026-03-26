@@ -1,4 +1,7 @@
-model = "yolov8n.pt"
-threshold = 0.4
-iou_threshold = 0.15
-skip_frames = 2
+MODEL = "yolov8n.pt"
+THRESHOLD = 0.4
+IOU_THRESHOLD = 0.12
+SKIP_FRAMES = 2
+STATE_EMPTY = "EMPTY"
+STATE_OCCUPIED = "OCCUPIED"
+STATE_APPROACH = "APPROACH"
