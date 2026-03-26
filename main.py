@@ -51,7 +51,7 @@ def get_roi_frame(cap: cv2.VideoCapture):
     cv2.destroyAllWindows()
     return roi
 
-def draw_frame(frame, roi, state, person_boxes):
+def draw_frame(frame, roi, state, person_boxes, tracker: TableTracker):
     x, y, w, h = roi
 
     color = {
@@ -71,6 +71,13 @@ def draw_frame(frame, roi, state, person_boxes):
     for (bx1, by1, bx2, by2) in person_boxes:
         cv2.rectangle(frame, (bx1, by1), (bx2, by2), (255, 200, 0), 2)
 
+    info_lines = [
+        f"Events: {len(tracker.events) - 1}",
+    ]
+
+    for i, line in enumerate(info_lines):
+        cv2.putText(frame, line, (10, 25 + i * 22),
+                    cv2.FONT_HERSHEY_SIMPLEX, 0.55, (20, 20, 20), 1, cv2.LINE_AA)
     return frame
 
 def bbox_iou_with_roi(bx1, by1, bx2, by2, rx, ry, rw, rh) -> float:
@@ -146,7 +153,7 @@ def run(video_path: str, output_path: Path):
         tracker.update(frame_no, person_in_roi)
         
         # Draw frame
-        vis = draw_frame(frame.copy(), roi, tracker.state, last_boxes)
+        vis = draw_frame(frame.copy(), roi, tracker.state, last_boxes, tracker)
 
         writer.write(vis)
 
