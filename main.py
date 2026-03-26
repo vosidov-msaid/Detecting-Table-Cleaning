@@ -9,6 +9,7 @@ from ultralytics import YOLO
 
 import config
 from utils import download_video
+from table_tracker import TableTracker
 
 STATE_EMPTY = config.STATE_EMPTY
 STATE_OCCUPIED = config.STATE_OCCUPIED
@@ -54,13 +55,17 @@ def draw_frame(frame, roi, state, person_boxes):
     x, y, w, h = roi
 
     color = {
-        STATE_EMPTY: "EMPTY",
-        STATE_OCCUPIED: "OCCUPIED",
-        STATE_APPROACH: "APPROACH",
+        STATE_EMPTY: config.COLOR_EMPTY,
+        STATE_OCCUPIED: config.COLOR_OCCUPIED,
+        STATE_APPROACH: config.COLOR_APPROACH,
     }.get(state, (255, 255, 255))
 
     # ROI Frame
     cv2.rectangle(frame, (x, y), (x + w, y + h), color, 3)
+
+    label = f"TABLE: {state}"
+    cv2.rectangle(frame, (x, y - 30), (x + len(label) * 12, y), color, -1)
+    cv2.putText(frame, label, (x + 4, y - 8), cv2.FONT_HERSHEY_SIMPLEX, 0.65, (255, 0, 0), 2)
 
     # Person boxes
     for (bx1, by1, bx2, by2) in person_boxes:
@@ -108,6 +113,8 @@ def run(video_path: str, output_path: Path):
     roi = get_roi_frame(cap)
     print("[INFO] ROI: ", roi)
 
+    tracker  = TableTracker(roi, fps)
+
     out_path = str(output_path / "output.mp4")
     fourcc = cv2.VideoWriter_fourcc(*"mp4v")
     writer = cv2.VideoWriter(out_path, fourcc, fps, (1280, 720))
@@ -129,15 +136,17 @@ def run(video_path: str, output_path: Path):
         if frame_no % config.SKIP_FRAMES == 0:  
             # Detect person on frame        
             last_boxes = detect_person(frame)
-
+        
         # Check person in ROI
         rx, ry, rw, rh = roi
         person_in_roi = any(
             bbox_iou_with_roi(bx1, by1, bx2, by2, rx, ry, rw, rh) >= config.IOU_THRESHOLD
             for (bx1, by1, bx2, by2) in last_boxes
         )
+        tracker.update(frame_no, person_in_roi)
+        
         # Draw frame
-        vis = draw_frame(frame.copy(), roi, "STATE_OCCUPIED", last_boxes)
+        vis = draw_frame(frame.copy(), roi, tracker.state, last_boxes)
 
         writer.write(vis)
 
