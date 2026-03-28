@@ -1,6 +1,6 @@
 import argparse
 import os
-from tracemalloc import Frame
+import time
 import cv2
 import numpy as np
 import pandas as pd
@@ -71,8 +71,11 @@ def draw_frame(frame, roi, state, person_boxes, tracker: TableTracker):
     for (bx1, by1, bx2, by2) in person_boxes:
         cv2.rectangle(frame, (bx1, by1), (bx2, by2), (255, 200, 0), 2)
 
+    stats = tracker.stat_guests()
     info_lines = [
         f"Events: {len(tracker.events) - 1}",
+        f"Cycles: {stats['n_cycles']}",
+        f"Avg response: {stats['avg_response_sec']}",
     ]
 
     for i, line in enumerate(info_lines):
@@ -127,6 +130,7 @@ def run(video_path: str, output_path: Path):
     writer = cv2.VideoWriter(out_path, fourcc, fps, (1280, 720))
 
     frame_no = 0
+    t_start  = time.time()
     last_boxes = []
 
     # Video handling... (click Q for quit)
@@ -141,7 +145,7 @@ def run(video_path: str, output_path: Path):
         _, _, _, frame = resize_video(frame)
 
         if frame_no % config.SKIP_FRAMES == 0:  
-            # Detect person on frame        
+            # Detect person on frame
             last_boxes = detect_person(frame)
         
         # Check person in ROI
@@ -161,11 +165,22 @@ def run(video_path: str, output_path: Path):
         if cv2.waitKey(1) & 0xFF == ord("q"):
             print("[INFO] Exit")
             break
+
+        if frame_no % 100 == 0:
+            elapsed = time.time() - t_start
+            if total_frames > 0:
+                pct = (frame_no / total_frames * 100)
+            else:
+                pct = 0
+            print(f"[{pct:5.1f}%] frame {frame_no}/{total_frames} - ({elapsed:.1f}s elapsed)")
     
     cap.release()
     writer.release()
 
     cv2.destroyAllWindows()
+
+    print(f"\n[INFO] Total {frame_no} frames in {time.time() - t_start:.1f}s")
+    print(f"[INFO] Saved: {out_path}")
         
 
 

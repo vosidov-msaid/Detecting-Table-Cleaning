@@ -1,4 +1,5 @@
 import pandas as pd
+import numpy as np
 from datetime import datetime
 import config
 
@@ -45,3 +46,30 @@ class TableTracker:
         }])
         self.events = pd.concat([self.events, row], ignore_index=True)
         print(f"[EVENT] {event:10s} t={ts:7.2f}s frame={frame_no}")
+
+    def stat_guests(self) -> dict:
+        df = self.events
+
+        none_response = {"avg_response_sec": None, "n_cycles": 0}
+
+        if df.empty:
+            return none_response
+        
+        delays = []
+        empties = df[df["event"] == STATE_EMPTY]["timestamp"].tolist()
+        approaches = df[df["event"] == STATE_APPROACH]["timestamp"].tolist()
+
+        for emps in empties:
+            nexts = [a for a in approaches if a > emps]
+            if nexts:
+                delays.append(nexts[0] - emps)
+
+        if delays:
+            return {
+                "avg_response_sec": round(float(np.mean(delays)), 2),
+                "min_response_sec": round(float(np.min(delays)), 2),
+                "max_response_sec": round(float(np.max(delays)), 2),
+                "n_cycles": len(delays),
+            }
+
+        return none_response
